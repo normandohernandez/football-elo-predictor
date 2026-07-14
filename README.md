@@ -25,6 +25,18 @@ Trains multinomial Logistic Regression and XGBoost, and compares both against a 
 
 Matches are processed in strict chronological order, and every rating and feature is recorded *before* the match result is applied — each row reflects only what was knowable walking into that match. The train/test split is temporal as well: models are evaluated on real World Cup matches (2022, 2026) that the training data never sees.
 
+## Results
+
+Evaluated on 164 held-out FIFA World Cup matches (2022 and 2026) never seen during training:
+
+| Model                   | Accuracy | Log loss |
+|-------------------------|----------|----------|
+| Naive (always home win) | 0.463    | —        |
+| Logistic Regression     | **0.591**| 0.932    |
+| XGBoost                 | 0.585    | 0.940    |
+
+Trained on 49,341 international matches (1872–2026).
+
 ## Getting started
 
 **1. Install dependencies**
