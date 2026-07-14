@@ -137,8 +137,8 @@ FEATURE_COLUMNS = [
 
 def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     """
-    This one's done for you — just combines a couple of columns you'll
-    already have by this point.
+    Final assembly: derive elo_diff and cast the neutral-venue flag to int
+    so every column in FEATURE_COLUMNS is numeric and model-ready.
     """
     df = df.copy()
     df["elo_diff"] = df["elo_home"] - df["elo_away"]

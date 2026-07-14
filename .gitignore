@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Data (downloaded from Kaggle, not committed)
+data/*.csv
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Notebooks / experiments
+.ipynb_checkpoints/
