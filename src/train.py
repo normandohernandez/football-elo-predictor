@@ -101,6 +101,81 @@ def train_models(train, test):
     return results
 
 
+def train_final_model(played):
+    """
+    Train the model actually used for predicting the future.
+
+    train_models() above deliberately holds out the 2022/2026 World Cup
+    matches so we can measure accuracy on games the model never trained on.
+    But once you're happy with that number and want to predict *upcoming*
+    fixtures, you want the model to learn from every match played so far —
+    including the 2026 games that already happened, since those are now
+    real history, not a leak. This retrains XGBoost on all of `played`.
+    """
+    X = played[FEATURE_COLUMNS].values
+    y = played["result"].astype(int).values
+
+    model = xgb.XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.03,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="multi:softprob",
+        num_class=3,
+        eval_metric="mlogloss",
+        random_state=42,
+    )
+    model.fit(X, y)
+    return model
+
+
+def swap_home_away(features):
+    """
+    Mirror a feature frame as if home and away teams were swapped: exchange
+    the elo/form columns, negate elo_diff, and flip the h2h winrate
+    (away's winrate against home = 1 - home's winrate against away).
+    """
+    swapped = features.copy()
+    swapped["elo_home"], swapped["elo_away"] = features["elo_away"], features["elo_home"]
+    swapped["elo_diff"] = -features["elo_diff"]
+    for col in ("ppg", "gs", "gc"):
+        swapped[f"home_form_{col}"] = features[f"away_form_{col}"]
+        swapped[f"away_form_{col}"] = features[f"home_form_{col}"]
+    swapped["h2h_home_winrate"] = 1 - features["h2h_home_winrate"]
+    return swapped
+
+
+def predict_upcoming(unplayed, model, test_tournament="FIFA World Cup"):
+    """
+    Predict outcomes for fixtures with no result yet (future matches found
+    by temporal_split). Returns a DataFrame with a win/draw/win probability
+    per fixture, or an empty DataFrame if there's nothing to predict.
+
+    These are neutral-venue matches where "home" is just FIFA's nominal
+    labeling, so each fixture is scored in both orientations and averaged —
+    otherwise the model's learned bias toward the listed home team (hosts
+    and higher seeds are over-represented as nominal home in the history)
+    would leak into the probabilities.
+    """
+    upcoming = unplayed[unplayed["tournament"] == test_tournament].copy()
+    # Fixtures whose opponents aren't decided yet (e.g. the final before the
+    # semis are played) have NaN teams — no real features to predict from.
+    upcoming = upcoming.dropna(subset=["home_team", "away_team"])
+    if upcoming.empty:
+        return upcoming
+
+    features = upcoming[FEATURE_COLUMNS]
+    proba = model.predict_proba(features.values)  # columns are [away_win, draw, home_win]
+    proba_swapped = model.predict_proba(swap_home_away(features)[FEATURE_COLUMNS].values)
+    upcoming["p_away_win"] = (proba[:, 0] + proba_swapped[:, 2]) / 2
+    upcoming["p_draw"] = (proba[:, 1] + proba_swapped[:, 1]) / 2
+    upcoming["p_home_win"] = (proba[:, 2] + proba_swapped[:, 0]) / 2
+
+    return upcoming[["date", "home_team", "away_team", "city",
+                      "p_home_win", "p_draw", "p_away_win"]].sort_values("date")
+
+
 def main():
     print("Loading data...")
     df = load_data()
@@ -120,6 +195,17 @@ def main():
     for name, metrics in results.items():
         ll = f"{metrics['log_loss']:.3f}" if metrics["log_loss"] is not None else "n/a"
         print(f"  {name:28s} accuracy={metrics['accuracy']:.3f}  log_loss={ll}")
+
+    print("\nTraining final model on all played matches (for live predictions)...")
+    played = df.dropna(subset=["result"])
+    final_model = train_final_model(played)
+
+    print("\nPredicting upcoming World Cup fixtures...")
+    upcoming = predict_upcoming(unplayed, final_model)
+    if upcoming.empty:
+        print("  No upcoming World Cup fixtures found in the dataset.")
+    else:
+        print(upcoming.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 
 if __name__ == "__main__":
